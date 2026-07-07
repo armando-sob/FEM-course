@@ -55,30 +55,6 @@ exemplos/portico2d_pdelta.dat
 exemplos/portico2d_pdelta.out
 ```
 
-## Como compilar
-
-No Windows com MSYS2/gfortran:
-
-```powershell
-$env:PATH='C:\msys64\mingw64\bin;' + $env:PATH
-gfortran -Wall src\portico2d_pdelta.f -o portico2d_pdelta.exe
-```
-
-## Como rodar
-
-O programa le o arquivo `portico2d_pdelta.dat` no diretorio atual. Uma forma simples de executar o exemplo e:
-
-```powershell
-Copy-Item exemplos\portico2d_pdelta.dat .
-.\portico2d_pdelta.exe
-```
-
-A saida sera gerada em:
-
-```text
-portico2d_pdelta.out
-```
-
 ## Formato do arquivo de entrada
 
 ```text
@@ -122,9 +98,9 @@ TOL = 1.0D-8
 
 Na ultima verificacao, o programa convergiu em 3 iteracoes. A comparacao com resultados de referencia fornecidos pelo usuario apresentou erros relativos inferiores a 0.75% para os deslocamentos e rotacoes avaliados.
 
-## Referencias
 
 - Cook et al. - Concepts and Applications of Finite Element Analysis.
 - Bathe - Finite Element Procedures.
 - Zienkiewicz e Taylor - The Finite Element Method.
+
 
