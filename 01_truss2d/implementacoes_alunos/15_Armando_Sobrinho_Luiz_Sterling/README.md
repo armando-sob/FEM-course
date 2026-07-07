@@ -1,12 +1,12 @@
-# Portico 2D com efeito P-Delta
+﻿# Portico 2D com efeito P-Delta
 
 Implementacao: Armando Sobrinho e Luiz Sterling
 
-Origem do trabalho: modulo `01_truss2d`, a partir do programa didatico de trelica 2D em Fortran 77.
+Origem do trabalho: modulo `01_truss2d`, a partir do programa de trelica 2D em Fortran 77.
 
 ## Descricao
 
-Esta implementacao adapta o programa didatico inicial de trelica 2D para uma formulacao de portico plano 2D. O elemento original de barra axial, com dois graus de liberdade por no, foi substituido por um elemento de portico plano com tres graus de liberdade por no: deslocamento horizontal `ux`, deslocamento vertical `uy` e rotacao `rz`.
+Esta implementacao adapta o programa inicial de trelica 2D para uma formulacao de portico plano 2D. O elemento original de barra axial, com dois graus de liberdade por no, foi substituido por um elemento de portico plano com tres graus de liberdade por no: deslocamento horizontal `ux`, deslocamento vertical `uy` e rotacao `rz`.
 
 O programa monta a matriz de rigidez elastica de um elemento de portico plano de dois nos, com contribuicoes axial e flexional. Tambem foi adicionada uma rotina iterativa para considerar o efeito `P-Delta` por meio da matriz de rigidez geometrica calculada a partir do esforco normal de cada elemento.
 
@@ -127,3 +127,4 @@ Na ultima verificacao, o programa convergiu em 3 iteracoes. A comparacao com res
 - Cook et al. - Concepts and Applications of Finite Element Analysis.
 - Bathe - Finite Element Procedures.
 - Zienkiewicz e Taylor - The Finite Element Method.
+
