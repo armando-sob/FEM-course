@@ -10,7 +10,7 @@ Esta implementacao adapta o programa didatico inicial de trelica 2D para uma for
 
 O programa monta a matriz de rigidez elastica de um elemento de portico plano de dois nos, com contribuicoes axial e flexional. Tambem foi adicionada uma rotina iterativa para considerar o efeito `P-Delta` por meio da matriz de rigidez geometrica calculada a partir do esforco normal de cada elemento.
 
-## Formulação resumida
+## Formulacao resumida
 
 Para cada no:
 
@@ -49,7 +49,8 @@ O efeito `P-Delta` e resolvido iterativamente:
 ## Arquivos
 
 ```text
-src/portico2d_pdelta.f90
+src/portico2d_pdelta.f      versao principal em formato fixo
+src/portico2d_pdelta.f90    versao em formato livre para consulta
 exemplos/portico2d_pdelta.dat
 exemplos/portico2d_pdelta.out
 ```
@@ -60,7 +61,7 @@ No Windows com MSYS2/gfortran:
 
 ```powershell
 $env:PATH='C:\msys64\mingw64\bin;' + $env:PATH
-gfortran src\portico2d_pdelta.f90 -o portico2d_pdelta.exe
+gfortran -Wall src\portico2d_pdelta.f -o portico2d_pdelta.exe
 ```
 
 ## Como rodar
