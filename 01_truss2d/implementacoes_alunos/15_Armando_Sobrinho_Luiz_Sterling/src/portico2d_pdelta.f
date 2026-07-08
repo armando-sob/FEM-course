@@ -130,9 +130,23 @@ C=============================================================
       IF (IPDELTA.EQ.0) THEN
          CALL BUILD_STIFFNESS(NN,NE,MAX3N,MAXE,MAXM,X,Y,E1,E2,EMAT,
      .        EA,AA,EI,NAX,0,KMAT)
-         CALL SOLVE_WITH_BC(METHOD,NDOF,MAX3N,KMAT,F,U,NBC,
-     .        BCNODE,BCDOF,BCVAL,IS_PRESCRIBED,FREE_GDLS,NFREE,
-     .        KWORK,FWORK,URED)
+         IF (METHOD.EQ.1) THEN
+            DO I=1,NDOF
+               FWORK(I)=F(I)
+               DO J=1,NDOF
+                  KWORK(I,J)=KMAT(I,J)
+               END DO
+            END DO
+            CALL RESOLVE_PENALTY(NDOF,MAX3N,KWORK,FWORK,U,NBC,
+     .           BCNODE,BCDOF,BCVAL)
+         ELSE IF (METHOD.EQ.2) THEN
+            CALL RESOLVE_ELIMINATION(NDOF,MAX3N,KMAT,F,U,NBC,
+     .           BCNODE,BCDOF,BCVAL,IS_PRESCRIBED,FREE_GDLS,
+     .           NFREE,KWORK,FWORK,URED)
+         ELSE
+            WRITE(*,*) 'Erro: METHOD deve ser 1 ou 2.'
+            STOP
+         END IF
          CALL COMPUTE_AXIALS(NE,MAXE,MAXM,X,Y,E1,E2,EMAT,EA,AA,U,
      .        NAXNEW)
          DO E=1,NE
@@ -147,9 +161,23 @@ C=============================================================
          DO ITER=1,MAXITER
             CALL BUILD_STIFFNESS(NN,NE,MAX3N,MAXE,MAXM,X,Y,E1,E2,
      .           EMAT,EA,AA,EI,NAX,1,KMAT)
-            CALL SOLVE_WITH_BC(METHOD,NDOF,MAX3N,KMAT,F,U,NBC,
-     .           BCNODE,BCDOF,BCVAL,IS_PRESCRIBED,FREE_GDLS,NFREE,
-     .           KWORK,FWORK,URED)
+            IF (METHOD.EQ.1) THEN
+               DO I=1,NDOF
+                  FWORK(I)=F(I)
+                  DO J=1,NDOF
+                     KWORK(I,J)=KMAT(I,J)
+                  END DO
+               END DO
+               CALL RESOLVE_PENALTY(NDOF,MAX3N,KWORK,FWORK,U,NBC,
+     .              BCNODE,BCDOF,BCVAL)
+            ELSE IF (METHOD.EQ.2) THEN
+               CALL RESOLVE_ELIMINATION(NDOF,MAX3N,KMAT,F,U,NBC,
+     .              BCNODE,BCDOF,BCVAL,IS_PRESCRIBED,FREE_GDLS,
+     .              NFREE,KWORK,FWORK,URED)
+            ELSE
+               WRITE(*,*) 'Erro: METHOD deve ser 1 ou 2.'
+               STOP
+            END IF
             CALL COMPUTE_AXIALS(NE,MAXE,MAXM,X,Y,E1,E2,EMAT,EA,AA,U,
      .           NAXNEW)
 
@@ -488,18 +516,49 @@ C=============================================================
       END
 
 C=============================================================
-      SUBROUTINE SOLVE_WITH_BC(METHOD,NDOF,LDA,KIN,FEXT,U,NBC,
-     .     BCNODE,BCDOF,BCVAL,ISP,FREE,NFREE,KWORK,FWORK,URED)
+      SUBROUTINE RESOLVE_PENALTY(NDOF,LDA,KMAT,F,U,NBC,
+     .     BCNODE,BCDOF,BCVAL)
       IMPLICIT NONE
-      INTEGER METHOD,NDOF,LDA,NBC,NFREE
-      INTEGER BCNODE(NBC), BCDOF(NBC), ISP(NDOF), FREE(NDOF)
+      INTEGER NDOF,LDA,NBC
+      INTEGER BCNODE(NBC), BCDOF(NBC)
       DOUBLE PRECISION BCVAL(NBC)
-      DOUBLE PRECISION KIN(LDA,LDA), FEXT(NDOF), U(NDOF)
-      DOUBLE PRECISION KWORK(LDA,LDA), FWORK(NDOF), URED(NDOF)
-      INTEGER I,J,II,JJ,G1,G2
+      DOUBLE PRECISION KMAT(LDA,LDA), F(NDOF), U(NDOF)
+      INTEGER I,G1
       INTEGER GDL
       DOUBLE PRECISION PENA
 
+C----- Penalidade tipica: 1e12 * max(diagonal)
+      PENA=0.0D0
+      DO I=1,NDOF
+         IF (DABS(KMAT(I,I)).GT.PENA) PENA=DABS(KMAT(I,I))
+      END DO
+      IF (PENA.EQ.0.0D0) PENA=1.0D0
+      PENA=1.0D12*PENA
+
+      DO I=1,NBC
+         G1=GDL(BCNODE(I),BCDOF(I))
+         KMAT(G1,G1)=KMAT(G1,G1)+PENA
+         F(G1)=F(G1)+PENA*BCVAL(I)
+      END DO
+
+C----- Resolve: KMAT * U = F
+      CALL GAUSS(NDOF,LDA,KMAT,F,U)
+      RETURN
+      END
+
+C=============================================================
+      SUBROUTINE RESOLVE_ELIMINATION(NDOF,LDA,KMAT,F,U,NBC,
+     .     BCNODE,BCDOF,BCVAL,ISP,FREE,NFREE,KRED,FRED,URED)
+      IMPLICIT NONE
+      INTEGER NDOF,LDA,NBC,NFREE
+      INTEGER BCNODE(NBC), BCDOF(NBC), ISP(NDOF), FREE(NDOF)
+      DOUBLE PRECISION BCVAL(NBC)
+      DOUBLE PRECISION KMAT(LDA,LDA), F(NDOF), U(NDOF)
+      DOUBLE PRECISION KRED(LDA,LDA), FRED(NDOF), URED(NDOF)
+      INTEGER I,J,II,JJ,G1
+      INTEGER GDL
+
+C----- Inicia vetor de deslocamentos com valores prescritos
       DO I=1,NDOF
          U(I)=0.0D0
       END DO
@@ -508,59 +567,38 @@ C=============================================================
          U(G1)=BCVAL(I)
       END DO
 
-      IF (METHOD.EQ.1) THEN
-         DO I=1,NDOF
-            FWORK(I)=FEXT(I)
-            DO J=1,NDOF
-               KWORK(I,J)=KIN(I,J)
-            END DO
-         END DO
+C----- Identifica gdls livres
+      NFREE=0
+      DO I=1,NDOF
+         IF (ISP(I).EQ.0) THEN
+            NFREE=NFREE+1
+            FREE(NFREE)=I
+         END IF
+      END DO
 
-         PENA=0.0D0
-         DO I=1,NDOF
-            IF (DABS(KWORK(I,I)).GT.PENA) PENA=DABS(KWORK(I,I))
-         END DO
-         IF (PENA.EQ.0.0D0) PENA=1.0D0
-         PENA=1.0D12*PENA
-
-         DO I=1,NBC
-            G1=GDL(BCNODE(I),BCDOF(I))
-            KWORK(G1,G1)=KWORK(G1,G1)+PENA
-            FWORK(G1)=FWORK(G1)+PENA*BCVAL(I)
-         END DO
-         CALL GAUSS(NDOF,LDA,KWORK,FWORK,U)
-
-      ELSE IF (METHOD.EQ.2) THEN
-         NFREE=0
-         DO I=1,NDOF
-            IF (ISP(I).EQ.0) THEN
-               NFREE=NFREE+1
-               FREE(NFREE)=I
+C----- Constroi sistema reduzido
+      DO II=1,NFREE
+         I=FREE(II)
+         FRED(II)=F(I)
+         DO J=1,NDOF
+            IF (ISP(J).EQ.1) THEN
+               FRED(II)=FRED(II)-KMAT(I,J)*U(J)
             END IF
          END DO
-
-         DO II=1,NFREE
-            I=FREE(II)
-            FWORK(II)=FEXT(I)
-            DO J=1,NDOF
-               IF (ISP(J).EQ.1) THEN
-                  FWORK(II)=FWORK(II)-KIN(I,J)*U(J)
-               END IF
-            END DO
-            DO JJ=1,NFREE
-               J=FREE(JJ)
-               KWORK(II,JJ)=KIN(I,J)
-            END DO
+         DO JJ=1,NFREE
+            J=FREE(JJ)
+            KRED(II,JJ)=KMAT(I,J)
          END DO
+      END DO
 
-         CALL GAUSS(NFREE,LDA,KWORK,FWORK,URED)
-         DO II=1,NFREE
-            U(FREE(II))=URED(II)
-         END DO
-      ELSE
-         WRITE(*,*) 'Erro: METHOD deve ser 1 ou 2.'
-         STOP
-      END IF
+C----- Resolve sistema reduzido: KRED * URED = FRED
+      CALL GAUSS(NFREE,LDA,KRED,FRED,URED)
+
+C----- Reconstroi vetor completo U
+      DO II=1,NFREE
+         I=FREE(II)
+         U(I)=URED(II)
+      END DO
       RETURN
       END
 
