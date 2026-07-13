@@ -97,7 +97,7 @@ C----- Cargas nodais
 
       CLOSE(10)
 
-C----- Inicializacao
+C----- Zera matrizes e vetores
       DO I=1,NDOF
          F(I)=0.0D0
          U(I)=0.0D0
@@ -108,16 +108,20 @@ C----- Inicializacao
             KMAT(I,J)=0.0D0
          END DO
       END DO
-
+	  
+C----- Marca gdls prescritos
       DO I=1,NBC
          IS_PRESCRIBED(GDL(BCNODE(I),BCDOF(I))) = 1
       END DO
-
+	  
+C----- Monta vetor de cargas F
       DO I=1,NLOAD
          F(GDL(LDNODE(I),LDDOF(I))) =
      .      F(GDL(LDNODE(I),LDDOF(I))) + LDVAL(I)
       END DO
 
+C----- NAX guarda o esforco normal usado na matriz geometrica.
+C----- Na primeira iteracao P-Delta ele inicia zerado.
       DO E=1,NE
          NAX(E)=0.0D0
          NAXNEW(E)=0.0D0
@@ -128,9 +132,11 @@ C  Solucao linear ou P-Delta
 C=============================================================
       CONVERGED = 0
       IF (IPDELTA.EQ.0) THEN
+C----- Analise linear: monta somente a rigidez elastica do portico.
          CALL BUILD_STIFFNESS(NN,NE,MAX3N,MAXE,MAXM,X,Y,E1,E2,EMAT,
      .        EA,AA,EI,NAX,0,KMAT)
          IF (METHOD.EQ.1) THEN
+C----- Metodo da penalidade altera uma copia de K e F.
             DO I=1,NDOF
                FWORK(I)=F(I)
                DO J=1,NDOF
@@ -155,10 +161,13 @@ C=============================================================
          ITER = 1
          CONVERGED = 1
       ELSE
+C----- Analise P-Delta: itera ate que os deslocamentos estabilizem.
+C----- Se o usuario nao informar valores validos, usa padroes.
          IF (MAXITER.LE.0) MAXITER = 30
          IF (TOL.LE.0.0D0) TOL = 1.0D-8
 
          DO ITER=1,MAXITER
+C----- A matriz da iteracao usa NAX obtido na iteracao anterior.
             CALL BUILD_STIFFNESS(NN,NE,MAX3N,MAXE,MAXM,X,Y,E1,E2,
      .           EMAT,EA,AA,EI,NAX,1,KMAT)
             IF (METHOD.EQ.1) THEN
@@ -178,9 +187,11 @@ C=============================================================
                WRITE(*,*) 'Erro: METHOD deve ser 1 ou 2.'
                STOP
             END IF
+C----- Atualiza os esforcos normais com os deslocamentos calculados.
             CALL COMPUTE_AXIALS(NE,MAXE,MAXM,X,Y,E1,E2,EMAT,EA,AA,U,
      .           NAXNEW)
 
+C----- Erro relativo: maior variacao de deslocamento / maior desloc.
             ERR = 0.0D0
             DEN = 1.0D0
             DO I=1,NDOF
@@ -203,7 +214,28 @@ C=============================================================
                GOTO 100
             END IF
          END DO
+         ITER = MAXITER
  100     CONTINUE
+      END IF
+
+C----- Se P-Delta nao convergiu, nao exporta resultados finais.
+C----- A ultima tentativa numerica existe, mas nao e aceita.
+      IF (IPDELTA.EQ.1 .AND. CONVERGED.EQ.0) THEN
+         WRITE(OUTUNIT,*) '========================================'
+         WRITE(OUTUNIT,*) 'PORTICO 2D - ERRO NA ANALISE'
+         WRITE(OUTUNIT,*) 'Arquivo de entrada: ', INFILE
+         WRITE(OUTUNIT,*) 'Analise: P-DELTA'
+         WRITE(OUTUNIT,*) 'Erro: analise nao convergiu.'
+         WRITE(OUTUNIT,*) 'Iteracoes executadas: ', ITER
+         WRITE(OUTUNIT,*) 'Numero maximo de iteracoes: ', MAXITER
+         WRITE(OUTUNIT,*) 'Erro relativo final: ', ERR
+         WRITE(OUTUNIT,*) 'Tolerancia exigida: ', TOL
+         WRITE(OUTUNIT,*) 'Resultados finais nao foram gerados.'
+         WRITE(OUTUNIT,*) 'Revise cargas, apoios, rigidez ou MAXITER.'
+         WRITE(*,*) 'Erro: analise P-Delta nao convergiu.'
+         WRITE(*,*) 'Veja o arquivo portico2d_pdelta.out.'
+         CLOSE(OUTUNIT)
+         STOP
       END IF
 
 C----- Reconstroi rigidez final e calcula reacoes
@@ -302,6 +334,10 @@ C=============================================================
       END
 
 C=============================================================
+C  GDL
+C  Converte o par (no, grau de liberdade local) para a posicao
+C  correspondente no vetor global. A numeracao local e:
+C  1=ux, 2=uy, 3=rz.
       INTEGER FUNCTION GDL(NODE, DOF)
       IMPLICIT NONE
       INTEGER NODE, DOF
@@ -310,6 +346,14 @@ C=============================================================
       END
 
 C=============================================================
+C  BUILD_STIFFNESS
+C  Monta a matriz de rigidez global do portico.
+C  Para cada elemento:
+C    1) calcula comprimento e cossenos diretores;
+C    2) monta rigidez elastica local;
+C    3) soma rigidez geometrica se USEGEO=1;
+C    4) transforma para coordenadas globais;
+C    5) acumula na matriz global KMAT.
       SUBROUTINE BUILD_STIFFNESS(NN,NE,LDA,MAXE,MAXM,X,Y,E1,E2,
      .     EMAT,EA,AA,EI,NAX,USEGEO,KMAT)
       IMPLICIT NONE
@@ -368,6 +412,10 @@ C=============================================================
       END
 
 C=============================================================
+C  FRAME_ELASTIC_LOCAL
+C  Monta a matriz local elastica 6x6 de um elemento de portico
+C  plano. A matriz combina rigidez axial EA/L e rigidez de flexao
+C  EI, usando os graus [u1,v1,rz1,u2,v2,rz2].
       SUBROUTINE FRAME_ELASTIC_LOCAL(E,A,II,L,K)
       IMPLICIT NONE
       DOUBLE PRECISION E,A,II,L,K(6,6)
@@ -413,6 +461,10 @@ C=============================================================
       END
 
 C=============================================================
+C  FRAME_GEOMETRIC_LOCAL
+C  Monta a matriz geometrica local 6x6 a partir do esforco normal
+C  N. Essa matriz representa o efeito P-Delta global. Pela
+C  convencao usada, N positivo e tracao e N negativo e compressao.
       SUBROUTINE FRAME_GEOMETRIC_LOCAL(N,L,K)
       IMPLICIT NONE
       DOUBLE PRECISION N,L,K(6,6), FAC
@@ -450,6 +502,9 @@ C  Assim, compressao reduz a rigidez lateral ao somar Kg.
       END
 
 C=============================================================
+C  TRANSFORM6
+C  Monta a matriz de transformacao 6x6 entre coordenadas locais
+C  do elemento e coordenadas globais da estrutura.
       SUBROUTINE TRANSFORM6(C,S,T)
       IMPLICIT NONE
       DOUBLE PRECISION C,S,T(6,6)
@@ -473,6 +528,9 @@ C=============================================================
       END
 
 C=============================================================
+C  GLOBALIZE6
+C  Calcula a rigidez do elemento em coordenadas globais:
+C  KG = transposta(T) * KL * T.
       SUBROUTINE GLOBALIZE6(T,KL,KG)
       IMPLICIT NONE
       DOUBLE PRECISION T(6,6), KL(6,6), KG(6,6)
@@ -494,6 +552,9 @@ C=============================================================
       END
 
 C=============================================================
+C  ASSEMBLE6
+C  Soma a matriz de rigidez global do elemento KE nas posicoes
+C  correspondentes aos seis graus de liberdade globais do elemento.
       SUBROUTINE ASSEMBLE6(KMAT,LDA,KE,G1,G2,G3,G4,G5,G6)
       IMPLICIT NONE
       INTEGER LDA,G1,G2,G3,G4,G5,G6
@@ -516,6 +577,10 @@ C=============================================================
       END
 
 C=============================================================
+C  RESOLVE_PENALTY
+C  Aplica condicoes de contorno pelo metodo da penalidade.
+C  A rigidez dos graus prescritos recebe um valor grande, forcando
+C  o deslocamento imposto sem eliminar linhas e colunas.
       SUBROUTINE RESOLVE_PENALTY(NDOF,LDA,KMAT,F,U,NBC,
      .     BCNODE,BCDOF,BCVAL)
       IMPLICIT NONE
@@ -547,6 +612,10 @@ C----- Resolve: KMAT * U = F
       END
 
 C=============================================================
+C  RESOLVE_ELIMINATION
+C  Resolve o sistema eliminando os graus de liberdade prescritos.
+C  Primeiro cria a lista de graus livres, monta o sistema reduzido,
+C  resolve por Gauss e depois remonta o vetor global U.
       SUBROUTINE RESOLVE_ELIMINATION(NDOF,LDA,KMAT,F,U,NBC,
      .     BCNODE,BCDOF,BCVAL,ISP,FREE,NFREE,KRED,FRED,URED)
       IMPLICIT NONE
@@ -603,6 +672,10 @@ C----- Reconstroi vetor completo U
       END
 
 C=============================================================
+C  COMPUTE_AXIALS
+C  Recupera o esforco normal de cada elemento a partir dos
+C  deslocamentos globais ja calculados. O deslocamento axial local
+C  e obtido por projecao no eixo do elemento.
       SUBROUTINE COMPUTE_AXIALS(NE,MAXE,MAXM,X,Y,E1,E2,EMAT,EA,AA,
      .     U,NAX)
       IMPLICIT NONE
@@ -634,6 +707,9 @@ C=============================================================
       END
 
 C=============================================================
+C  LOCAL_DISP
+C  Extrai do vetor global U os seis deslocamentos do elemento e os
+C  transforma para o sistema local: UE = T * Ue_global.
       SUBROUTINE LOCAL_DISP(T,U,G,UE)
       IMPLICIT NONE
       DOUBLE PRECISION T(6,6), U(*), UE(6), SUM
@@ -649,6 +725,8 @@ C=============================================================
       END
 
 C=============================================================
+C  MATVEC6
+C  Produto matriz-vetor para matrizes 6x6: Y = A * X.
       SUBROUTINE MATVEC6(A,X,Y)
       IMPLICIT NONE
       DOUBLE PRECISION A(6,6), X(6), Y(6), SUM
@@ -664,6 +742,8 @@ C=============================================================
       END
 
 C=============================================================
+C  ZERO6
+C  Zera uma matriz 6x6.
       SUBROUTINE ZERO6(A)
       IMPLICIT NONE
       DOUBLE PRECISION A(6,6)
@@ -677,6 +757,9 @@ C=============================================================
       END
 
 C=============================================================
+C  COMPUTE_REACTIONS
+C  Calcula o vetor de reacoes globais pela expressao R = K*U - F.
+C  Depois, o programa imprime apenas os graus de liberdade prescritos.
       SUBROUTINE COMPUTE_REACTIONS(NDOF,LDA,K,F,U,R)
       IMPLICIT NONE
       INTEGER NDOF,LDA,I,J
@@ -692,6 +775,9 @@ C=============================================================
       END
 
 C=============================================================
+C  GAUSS
+C  Resolve o sistema linear A*X=B por eliminacao de Gauss com
+C  pivotamento parcial. A matriz A e o vetor B sao alterados.
       SUBROUTINE GAUSS(N,LDA,A,B,X)
       IMPLICIT NONE
       INTEGER N,LDA,I,J,K,IP
