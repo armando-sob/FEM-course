@@ -349,7 +349,7 @@ C=============================================================
 C  BUILD_STIFFNESS
 C  Monta a matriz de rigidez global do portico.
 C  Para cada elemento:
-C    1) calcula comprimento e cossenos diretores;
+C    1) calcula comprimento e cossenos;
 C    2) monta rigidez elastica local;
 C    3) soma rigidez geometrica se USEGEO=1;
 C    4) transforma para coordenadas globais;
